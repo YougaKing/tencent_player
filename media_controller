@@ -1,0 +1,200 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:super_player/super_player.dart';
+
+
+class MediaController extends TXVodPlayerController {
+  MediaController();
+
+  StreamSubscription? _playEventSubscription;
+  StreamSubscription? _playNetStatusSubscription;
+  int videoWidth = 0;
+  int videoHeight = 0;
+  bool prepared = false;
+
+  Future<void> startPlay(String url, {bool isAutoPlay = false}) async {
+    await initialize();
+    await config();
+    debugPrint("startPlay() -- $isAutoPlay -- $url");
+    setAutoPlay(isAutoPlay: isAutoPlay);
+    startVodPlay(url);
+    _playEventSubscription = onPlayerEventBroadcast.listen((event) async {
+      switch (event["event"]) {
+        case TXVodPlayEvent.PLAY_EVT_VOD_PLAY_PREPARED:
+          prepared = true;
+          debugPrint("event:TXVodPlayEvent.PLAY_EVT_VOD_PLAY_PREPARED--event:${event.toString()}");
+          break;
+      }
+    });
+  }
+
+  void stateListen(Function(MediaController controller, TXPlayerState? state) onEvent) {
+    onPlayerState.listen((tXPlayerState) {
+      onEvent.call(this, tXPlayerState);
+    });
+  }
+
+  void eventListen(Function(MediaController controller, int event, [dynamic arguments])? onEvent) {
+    _playEventSubscription?.cancel();
+    _playEventSubscription = onPlayerEventBroadcast.listen((event) async {
+      try {
+        switch (event["event"]) {
+          case TXVodPlayEvent.PLAY_EVT_VOD_PLAY_PREPARED:
+            prepared = true;
+            debugPrint("event:TXVodPlayEvent.PLAY_EVT_VOD_PLAY_PREPARED--event:${event.toString()}");
+            onEvent?.call(this, TXVodPlayEvent.PLAY_EVT_VOD_PLAY_PREPARED);
+            break;
+          case TXVodPlayEvent.PLAY_EVT_PLAY_BEGIN:
+            debugPrint("event:TXVodPlayEvent.PLAY_EVT_PLAY_BEGIN--event:${event.toString()}");
+            // if (Component.isIOS) {
+            //   // ios TXPlayerVideo 不加在适配时， 不回掉 TXVodPlayEvent.PLAY_EVT_RCV_FIRST_I_FRAME 事件
+            //   videoWidth = await getWidth();
+            //   videoHeight = await getHeight();
+            //   debugPrint("videoWidth:$videoWidth--videoHeight:$videoHeight");
+            //   onEvent?.call(this, TXVodPlayEvent.PLAY_EVT_RCV_FIRST_I_FRAME);
+            // }
+            break;
+          case TXVodPlayEvent.PLAY_EVT_RCV_FIRST_I_FRAME:
+            // var supportedBitrates = await getSupportedBitrates();
+            // SupportedBitrate? supportedBitrate = TencentPlayer.preferredSupportedBitrate(supportedBitrates);
+            // if (supportedBitrate != null) {
+            //   debugPrint("supportedBitrate:${supportedBitrate.toMap()}");
+            //   await setBitrateIndex(supportedBitrate.index);
+            // }
+            debugPrint("event:TXVodPlayEvent.PLAY_EVT_RCV_FIRST_I_FRAME--event:${event.toString()}");
+            videoWidth = await getWidth();
+            videoHeight = await getHeight();
+            debugPrint("videoWidth:$videoWidth--videoHeight:$videoHeight");
+            onEvent?.call(this, TXVodPlayEvent.PLAY_EVT_RCV_FIRST_I_FRAME);
+            break;
+          case TXVodPlayEvent.PLAY_EVT_PLAY_PROGRESS:
+            // debugPrint("event:TXVodPlayEvent.PLAY_EVT_PLAY_PROGRESS--event:${event.toString()}");
+            int? currentProgressMs = event[TXVodPlayEvent.EVT_PLAY_PROGRESS_MS];
+            double currentProgress = event[TXVodPlayEvent.EVT_PLAY_PROGRESS].toDouble();
+            double videoDuration = event[TXVodPlayEvent.EVT_PLAY_DURATION].toDouble(); // 总播放时长，转换后的单位 秒
+            onEvent?.call(this, TXVodPlayEvent.PLAY_EVT_PLAY_PROGRESS, {
+              TXVodPlayEvent.EVT_PLAY_PROGRESS_MS: currentProgressMs,
+              TXVodPlayEvent.EVT_PLAY_PROGRESS: currentProgress,
+              TXVodPlayEvent.EVT_PLAY_DURATION: videoDuration
+            });
+            break;
+          case TXVodPlayEvent.PLAY_EVT_PLAY_END:
+            debugPrint("event:TXVodPlayEvent.PLAY_EVT_PLAY_END--event:${event.toString()}");
+            onEvent?.call(this, TXVodPlayEvent.PLAY_EVT_PLAY_END);
+            break;
+          case TXVodPlayEvent.PLAY_EVT_ERROR_INVALID_LICENSE:
+            debugPrint("event:TXVodPlayEvent.PLAY_EVT_ERROR_INVALID_LICENSE--event:${event.toString()}");
+            // TencentPlayer.init();
+            onEvent?.call(this, TXVodPlayEvent.PLAY_EVT_ERROR_INVALID_LICENSE);
+            break;
+          case TXVodPlayEvent.PLAY_ERR_NET_DISCONNECT:
+            debugPrint("event:TXVodPlayEvent.PLAY_ERR_NET_DISCONNECT--event:${event.toString()}");
+            onEvent?.call(this, TXVodPlayEvent.PLAY_ERR_NET_DISCONNECT);
+            break;
+          case -6003:
+            debugPrint("DEMUXER_FAIL--event:${event.toString()}");
+            onEvent?.call(this, TXVodPlayEvent.PLAY_ERR_NET_DISCONNECT);
+            break;
+          case -6011:
+            debugPrint("DOWNLOAD_FAIL--event:${event.toString()}");
+            onEvent?.call(this, TXVodPlayEvent.PLAY_ERR_NET_DISCONNECT);
+            break;
+          case TXVodPlayEvent.PLAY_EVT_CHANGE_RESOLUTION:
+            debugPrint("event:TXVodPlayEvent.PLAY_EVT_CHANGE_RESOLUTION--event:${event.toString()}");
+            videoWidth = await getWidth();
+            videoHeight = await getHeight();
+            onEvent?.call(this, TXVodPlayEvent.PLAY_EVT_CHANGE_RESOLUTION);
+            break;
+          default:
+            debugPrint("event:${event.toString()}");
+            break;
+        }
+      } catch (e) {
+        debugPrint('listen.Exception: ${e.toString()}');
+      }
+    });
+
+    _playNetStatusSubscription = onPlayerNetStatusBroadcast.listen((event) async {
+      try {
+        // var width = (event[TXVodNetEvent.NET_STATUS_VIDEO_WIDTH]);
+        // var height = (event[TXVodNetEvent.NET_STATUS_VIDEO_HEIGHT]);
+        // var fps = (event[TXVodNetEvent.NET_STATUS_VIDEO_FPS]);
+        // debugPrint("视频信息 - fps:$fps");
+        // onEvent?.call(TXVodPlayEvent.PLAY_EVT_RENDER_FIRST_FRAME_ON_VIEW,
+        //     {TXVodNetEvent.NET_STATUS_VIDEO_WIDTH: width, TXVodNetEvent.NET_STATUS_VIDEO_HEIGHT: height, TXVodNetEvent.NET_STATUS_VIDEO_FPS: fps});
+
+        // var netSpeed = (event[TXVodNetEvent.NET_STATUS_NET_SPEED]); //推流：音视频数据发送总比特率；拉流：音视频数据接收总比特率 单位：kbps
+        // bool network = await CommonUtil.isConnectivity();
+        // // debugPrint("netSpeed:$netSpeed--playState:$playState--network:$network");
+        // if (netSpeed == 0 && (playState == TXPlayerState.failed || playState == TXPlayerState.buffering) && !network) {
+        //   debugPrint("网络错误--playState:$playState");
+        //   onEvent?.call(this, TXVodPlayEvent.PLAY_ERR_NET_DISCONNECT);
+        // }
+      } catch (e) {
+        debugPrint('listen.Exception: ${e.toString()}');
+      }
+    });
+  }
+
+  Future<void> config({bool loop = false, bool mute = false, double startTime = 0}) async {
+    await setLoop(loop);
+    await setMute(mute);
+    if (startTime > 0) {
+      await setStartTime(startTime);
+    }
+    await enableHardwareDecode(true);
+    FTXVodPlayConfig playConfig = FTXVodPlayConfig();
+    playConfig.connectRetryCount = 1;
+    playConfig.connectRetryInterval = 1;
+    // playConfig.progressInterval = Chronograph.progressInterval;
+
+    /// 设为true，可平滑切换码率, 设为false时，可提高多码率地址打开速度
+    playConfig.smoothSwitchBitrate = true;
+
+    /// 如果不配置preferredResolution，则在播放多码率视频的时候优先播放720 * 1280分辨率的码率
+    /// 播放 HLS 的多码率视频源，如果你提前知道视频流的分辨率信息，可以在启播前优先指定播放的视频分辨率。 播放器会查找小于或等于偏好分辨率的流进行启播，启播后没有必要再通过 setBitrateIndex 切换到需要的码流。
+    // playConfig.preferredResolution = TencentPlayer.preferredResolution();
+    playConfig.enableAccurateSeek = true; // 设置是否精确 seek，默认 true
+    await setConfig(playConfig);
+    setRequestAudioFocus(true);
+    setVolume(100);
+  }
+
+  Future<void> setVolume(int volume) async {
+    await setAudioPlayoutVolume(volume);
+  }
+
+  Size applyAspectRatio(double maxWidth, double maxHeight) {
+    var aspectRatio = 1.0 * videoWidth / videoHeight;
+    double width = videoWidth.toDouble();
+    double height = videoHeight.toDouble();
+    if (width > maxWidth) {
+      width = maxWidth;
+      height = width / aspectRatio;
+    }
+
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * aspectRatio;
+    }
+
+    if (width < maxWidth) {
+      width = maxWidth;
+      height = width / aspectRatio;
+    }
+
+    if (height < maxHeight) {
+      height = maxHeight;
+      width = height * aspectRatio;
+    }
+    return Size(width, height);
+  }
+
+  @override
+  Future<void> dispose() async {
+    _playEventSubscription?.cancel();
+    _playNetStatusSubscription?.cancel();
+    super.dispose();
+  }
+}
