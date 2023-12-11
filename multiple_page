@@ -1,0 +1,179 @@
+import 'package:flutter/material.dart';
+import 'package:super_player/super_player.dart';
+import 'package:tuple/tuple.dart';
+
+import 'media_controller.dart';
+
+class MultiplePage extends StatefulWidget {
+  @override
+  State<StatefulWidget> createState() => _MultiplePageState();
+}
+
+class _MultiplePageState extends State<MultiplePage> {
+  List<String> videoList = [
+    "https://media.dailyworkout.com.cn/videos/action/76f5663fbb8248a515e016f2e19942c5/default/playlist/30/master.m3u8",
+    "https://media.dailyworkout.com.cn/videos/action/b05581e24df1726853075482d7ffbb17/default/playlist/30/master.m3u8",
+    "https://media.dailyworkout.com.cn/videos/action/16252d4aaa5f6f55dfdc1a482024efb4/default/playlist/30/master.m3u8",
+    "https://media.dailyworkout.com.cn/videos/action/be1f8d0c8425d2740299f7ee2da19dc2/default/playlist/30/master.m3u8",
+    "https://media.dailyworkout.com.cn/videos/action/e0f86b8f24667340cdd079b43a342e3a/default/playlist/30/master.m3u8",
+    "https://media.dailyworkout.com.cn/videos/action/60aad4408a19fb876f1985c1d13c0917/default/playlist/30/master.m3u8",
+    "https://media.dailyworkout.com.cn/videos/action/ceb9a87a162c9fb2d0ff264a4bcab937/default/playlist/30/master.m3u8",
+    "https://media.dailyworkout.com.cn/videos/action/a01be9797b8923bc1fba9dab7920f97a/default/playlist/30/master.m3u8",
+    "https://media.dailyworkout.com.cn/videos/action/76f5663fbb8248a515e016f2e19942c5/default/playlist/30/master.m3u8",
+  ];
+  MediaController currentController = MediaController();
+  Tuple2<int, MediaController>? nextController;
+  int playerIndex = 0;
+  TXPlayerState? playerState = TXPlayerState.paused;
+  String timeProgress = "";
+
+  Future<void> onListen() async {
+    if (!mounted) return;
+    currentController.stateListen((MediaController controller, tXPlayerState) {
+      if (controller != currentController) return;
+      debugPrint("播放状态 ${tXPlayerState?.name}");
+      if (tXPlayerState == TXPlayerState.failed) {
+      } else if (tXPlayerState == TXPlayerState.playing) {
+        playerState = tXPlayerState;
+        setState(() {});
+      } else if (tXPlayerState == TXPlayerState.paused) {
+        playerState = tXPlayerState;
+        setState(() {});
+      } else if (tXPlayerState == TXPlayerState.buffering) {}
+    });
+    currentController.eventListen((MediaController controller, event, [dynamic arguments]) async {
+      if (controller != currentController) return;
+      switch (event) {
+        case TXVodPlayEvent.PLAY_EVT_CHANGE_RESOLUTION:
+          setState(() {});
+          break;
+        case TXVodPlayEvent.PLAY_EVT_RCV_FIRST_I_FRAME:
+          setState(() {});
+          break;
+        case TXVodPlayEvent.PLAY_EVT_PLAY_PROGRESS:
+          double currentProgress = arguments[TXVodPlayEvent.EVT_PLAY_PROGRESS];
+          double videoDuration = arguments[TXVodPlayEvent.EVT_PLAY_DURATION];
+          var progressSec = formatDuration(Duration(seconds: currentProgress.toInt()));
+          timeProgress = "$progressSec/${formatDuration(Duration(seconds: videoDuration.toInt()))}";
+          setState(() {});
+          break;
+        case TXVodPlayEvent.PLAY_EVT_PLAY_END:
+          if (playerIndex == videoList.length - 1) {
+            Navigator.of(context).pop();
+          } else {
+            playerIndex++;
+            await playAction();
+          }
+          break;
+        case TXVodPlayEvent.PLAY_EVT_ERROR_INVALID_LICENSE:
+          break;
+        case TXVodPlayEvent.PLAY_ERR_NET_DISCONNECT:
+          break;
+      }
+    });
+  }
+
+  Future<void> initController() async {
+    await onListen();
+    currentController.startPlay(videoList[playerIndex], isAutoPlay: true);
+    prepareNextAction();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    initController();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(children: [
+      Container(
+          margin: const EdgeInsets.only(left: 20, bottom: 26),
+          alignment: Alignment.bottomLeft,
+          child: Text(timeProgress, style: const TextStyle(color: Colors.black, fontSize: 14))),
+      Center(child: AspectRatio(aspectRatio: 1, child: TXPlayerVideo(controller: currentController))),
+      Center(
+          child: Row(children: [
+        IconButton(
+            onPressed: () async {
+              if (playerIndex == 0) return;
+              playerIndex--;
+              await playAction();
+            },
+            icon: Icon(playerIndex <= 0 ? Icons.abc : Icons.skip_previous)),
+        Expanded(child: Container()),
+        IconButton(
+            onPressed: () {
+              if (playerState == TXPlayerState.playing) {
+                currentController.pause();
+              } else {
+                currentController.resume();
+              }
+            },
+            icon: Icon(playerState == TXPlayerState.playing ? Icons.pause_circle : Icons.play_circle)),
+        Expanded(child: Container()),
+        IconButton(
+            onPressed: () async {
+              if (playerIndex + 1 >= videoList.length) return;
+              playerIndex++;
+              await playAction();
+            },
+            icon: Icon(playerIndex + 1 >= videoList.length ? Icons.abc : Icons.skip_next)),
+      ]))
+    ]);
+  }
+
+  Future<void> prepareNextAction() async {
+    await Future.delayed(const Duration(milliseconds: 5000));
+    if (!mounted) return;
+    if (playerIndex + 1 < videoList.length) {
+      var controller = MediaController();
+      var tempIndex = playerIndex + 1;
+      nextController = Tuple2(tempIndex, controller);
+      controller.startPlay(videoList[tempIndex]);
+
+      debugPrint("MultiplePage.prepareNextAction() -- currentController:${currentController.hashCode} -- nextController:${controller.hashCode}");
+    }
+  }
+
+  Future<void> playAction() async {
+    var tempController = currentController;
+    await tempController.pause();
+    var match = nextController != null && nextController!.item1 == playerIndex;
+    if (match) {
+      currentController = nextController!.item2;
+      await onListen();
+      await currentController.resume();
+      debugPrint("currentController.resume() -- prepared : ${currentController.prepared}");
+    } else {
+      await nextController?.item2.dispose();
+      currentController = MediaController();
+      await onListen();
+      await currentController.startPlay(videoList[playerIndex], isAutoPlay: true);
+    }
+    debugPrint("MultiplePage.playAction() -- currentController:${currentController.hashCode}");
+    setState(() {});
+    debugPrint("============================================= $playerIndex ============================================= ");
+    await tempController.stop();
+    await tempController.dispose();
+    await prepareNextAction();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+    currentController.dispose();
+    nextController?.item2.dispose();
+  }
+}
+
+String formatDuration(Duration duration, {bool showMilliseconds = false}) {
+  String hours = (duration.inHours % 24).toString().padLeft(2, '0');
+  String minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
+  String seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
+  String milliseconds = (duration.inMilliseconds % 1000).toString().padLeft(3, '0');
+  return int.parse(hours) > 0
+      ? '$hours:$minutes:$seconds${showMilliseconds ? ":$milliseconds" : ""}'
+      : '$minutes:$seconds${showMilliseconds ? ":$milliseconds" : ""}';
+}
